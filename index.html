@@ -2,10 +2,561 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flujos</title>
+    <title>Simulación Completa: DDoS + NIDS (Suricata) + HIDS (Wazuh Agent)</title>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1400px;
+            background: linear-gradient(145deg, #1e1e2e 0%, #252535 100%);
+            border: 2px solid #00d2ff;
+            border-radius: 15px;
+            box-shadow: 0 0 40px rgba(0, 210, 255, 0.3), inset 0 0 60px rgba(0,0,0,0.5);
+            padding: 20px;
+            position: relative;
+        }
+
+        h1 { 
+            text-align: center; 
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 15px 0; 
+            font-size: 2rem; 
+            text-transform: uppercase; 
+            letter-spacing: 3px;
+            text-shadow: 0 0 20px rgba(0, 210, 255, 0.5);
+        }
+        
+        svg {
+            width: 100%;
+            height: 700px;
+            background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0f0f1e 100%);
+            border-radius: 10px;
+            border: 2px solid #2a2a4e;
+            overflow: visible;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+        }
+
+        .cable { stroke: #4a4a6a; stroke-width: 3; fill: none; filter: drop-shadow(0 0 3px #4a4a6a); }
+        .cable-mgmt { stroke: #666; stroke-width: 2; stroke-dasharray: 6,4; fill: none; }
+
+        text { font-family: 'Segoe UI', sans-serif; pointer-events: none; user-select: none; }
+        .txt-title { fill: #fff; font-weight: bold; font-size: 15px; text-anchor: middle; }
+        .txt-ip { fill: #00d2ff; font-size: 12px; text-anchor: middle; font-weight: 500; }
+        .txt-term { fill: #0f0; font-family: monospace; font-size: 12px; font-weight: bold; }
+        
+        .msg-label {
+            font-weight: bold;
+            font-size: 13px;
+            text-anchor: middle;
+            animation: fadeUp 1.8s forwards;
+            filter: drop-shadow(0 0 5px currentColor);
+        }
+        .msg-timeout { fill: #ff4444; }
+        .msg-hids { fill: #00ffff; }
+
+        @keyframes fadeUp {
+            0% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-30px); }
+        }
+
+        .blink { animation: blinker 0.6s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0.2; } }
+
+        .stress-shake { 
+            animation: vibrate 0.2s linear infinite both;
+            transform-origin: center center;
+        }
+        @keyframes vibrate {
+            0%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(-2px, 2px); }
+            20% { transform: translate(2px, -2px); }
+            30% { transform: translate(-2px, -2px); }
+            40% { transform: translate(2px, 2px); }
+            50% { transform: translate(-2px, 0px); }
+            60% { transform: translate(2px, 0px); }
+            70% { transform: translate(0px, 2px); }
+            80% { transform: translate(0px, -2px); }
+            90% { transform: translate(-2px, 2px); }
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 3fr 1fr;
+            gap: 25px;
+            align-items: center;
+            background: linear-gradient(135deg, #252535 0%, #2a2a3e 100%);
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #00d2ff;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+        }
+
+        .step-count { 
+            font-size: 1.4rem; 
+            font-weight: bold; 
+            color: #00d2ff; 
+            text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+        }
+        .desc { 
+            font-size: 1.1rem; 
+            color: #ccc; 
+            line-height: 1.6; 
+            text-align: center;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #2a2a3e, #3a3a5e);
+            color: white; 
+            border: 2px solid #00d2ff;
+            padding: 12px 24px; 
+            cursor: pointer; 
+            border-radius: 8px;
+            font-weight: bold; 
+            font-size: 1rem;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.2);
+        }
+        button:hover { 
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            color: #000; 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 210, 255, 0.4);
+        }
+        button:disabled { 
+            opacity: 0.3; 
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .glow-red { filter: drop-shadow(0 0 10px #ff0000); }
+        .glow-blue { filter: drop-shadow(0 0 10px #00d2ff); }
+        .glow-green { filter: drop-shadow(0 0 10px #0f0); }
+        .glow-orange { filter: drop-shadow(0 0 10px #e67e22); }
+
+    </style>
 </head>
 <body>
-    <h1>Flujos</h1>
+
+<div class="container">
+    <h1>🛡️ Arquitectura: NIDS (Suricata) + HIDS (Wazuh) 🛡️</h1>
+
+    <svg viewBox="0 0 1200 700" id="svgArea">
+        <defs>
+            <filter id="glow">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            
+            <linearGradient id="kali-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#00d2ff;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#3a7bd5;stop-opacity:1" />
+            </linearGradient>
+
+            <linearGradient id="server-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#444;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#222;stop-opacity:1" />
+            </linearGradient>
+            
+            <g id="icon-kali">
+                <circle cx="35" cy="35" r="32" fill="url(#kali-grad)" opacity="0.2"/>
+                <path d="M35,15 Q45,10 50,20 L48,35 Q50,45 40,50 L35,45 L30,50 Q20,45 22,35 L20,20 Q25,10 35,15 M30,25 L35,30 L40,25" 
+                      fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="28" cy="23" r="2" fill="#ff0000"/>
+                <circle cx="42" cy="23" r="2" fill="#ff0000"/>
+                <text x="35" y="65" class="txt-title" fill="#00d2ff" font-size="10">KALI</text>
+            </g>
+            
+            <g id="icon-pc">
+                <rect x="0" y="0" width="45" height="35" fill="#2a2a3e" stroke="#00d2ff" stroke-width="2" rx="3"/>
+                <rect x="3" y="3" width="39" height="29" fill="#0a0a1e" />
+                <circle cx="22" cy="17" r="8" fill="#3a7bd5" opacity="0.3"/>
+                <path d="M12,40 L33,40 L28,35 L17,35 Z" fill="#3a3a5e" stroke="#00d2ff"/>
+            </g>
+            
+            <g id="icon-server">
+                <rect x="0" y="0" width="50" height="70" fill="url(#server-grad)" stroke="#00d2ff" stroke-width="2" rx="3"/>
+                <rect x="5" y="5" width="40" height="12" fill="#1a1a2e" stroke="#00d2ff" rx="2"/>
+                <rect x="5" y="22" width="40" height="12" fill="#1a1a2e" stroke="#00d2ff" rx="2"/>
+                <rect x="5" y="39" width="40" height="12" fill="#1a1a2e" stroke="#00d2ff" rx="2"/>
+                <circle cx="40" cy="60" r="3" fill="#0f0" class="blink"/>
+                <circle cx="10" cy="11" r="2" fill="#00d2ff"/>
+                <circle cx="10" cy="28" r="2" fill="#00d2ff"/>
+                <circle cx="10" cy="45" r="2" fill="#00d2ff"/>
+            </g>
+
+            <g id="icon-wazuh-agent">
+                <circle cx="6" cy="6" r="8" fill="#00d2ff" opacity="0.3"/>
+                <path d="M2,2 L10,2 L10,8 Q6,12 2,8 Z" fill="#00d2ff" stroke="#fff" stroke-width="1"/>
+                <text x="6" y="7" font-size="6" fill="#fff" text-anchor="middle" font-weight="bold">W</text>
+            </g>
+
+            <radialGradient id="attack-glow">
+                <stop offset="0%" style="stop-color:#ff0000;stop-opacity:0.8" />
+                <stop offset="100%" style="stop-color:#ff0000;stop-opacity:0" />
+            </radialGradient>
+        </defs>
+
+        <path id="path-kali" d="M580,130 L580,270" class="cable"/>
+        
+        <path id="path-user1" d="M180,220 L550,295" class="cable"/>
+        <path id="path-user2" d="M180,320 L550,305" class="cable"/>
+        <path id="path-user3" d="M180,420 L550,315" class="cable"/>
+
+        <path id="path-vic1" d="M600,330 L280,550" class="cable"/>
+        
+        <path id="path-hids-log" d="M280,550 L600,330 L900,550" class="cable-mgmt"/> 
+
+        <path id="path-suricata" d="M620,300 L900,180" class="cable-mgmt"/>
+        <path id="path-wazuh" d="M620,330 L900,550" class="cable"/>
+        <path id="path-alert" d="M950,230 L950,550" class="cable-mgmt"/>
+        <line x1="970" y1="550" x2="1060" y2="490" class="cable"/>
+
+        <!-- KALI LINUX -->
+        <g transform="translate(530, 30)">
+            <rect x="-20" y="-15" width="140" height="130" fill="#0a0a1e" stroke="#00d2ff" stroke-width="3" rx="10" opacity="0.3"/>
+            <use href="#icon-kali" x="0" y="0" transform="scale(1.2)"/>
+            <text x="50" y="90" class="txt-title" fill="#fff" font-size="16">KALI LINUX</text>
+            <text x="50" y="108" class="txt-ip">10.50.0.100</text>
+            
+            <g transform="translate(-180, 20)" id="kali-terminal" style="opacity:0">
+                <rect width="340" height="65" fill="#000" stroke="#00d2ff" stroke-width="2" rx="5"/>
+                <rect width="340" height="20" fill="#00d2ff" rx="5 5 0 0"/>
+                <text x="10" y="14" class="txt-term" fill="#000" font-size="10" font-weight="bold">● ● ● root@kali</text>
+                <text x="15" y="40" class="txt-term" id="term-line1">root@kali:~#</text>
+                <text x="15" y="55" class="txt-term" id="term-line2" fill="#0f0">_</text>
+            </g>
+        </g>
+
+        <!-- ROUTER / FIREWALL -->
+        <g transform="translate(530, 280)">
+            <rect x="-30" y="0" width="140" height="50" fill="#2a2a3e" rx="8" stroke="#00d2ff" stroke-width="2"/>
+            <text x="40" y="28" class="txt-title">ROUTER / FW</text>
+            <circle cx="15" cy="25" r="4" fill="#0f0" class="blink"/>
+            <circle cx="25" cy="25" r="4" fill="#00d2ff" class="blink"/>
+            <path d="M110,25 Q115,10 120,25 Q120,40 110,40 Q100,40 100,25 Q105,10 110,25" 
+                  fill="#e74c3c" stroke="#c0392b" stroke-width="2"/>
+        </g>
+
+        <!-- USUARIOS -->
+        <g id="user-group">
+            <g transform="translate(130, 200)">
+                <use href="#icon-pc"/> 
+                <text x="22" y="50" class="txt-title" font-size="11">Finanzas</text>
+                <text x="22" y="62" class="txt-ip" font-size="10">10.50.0.10</text>
+            </g>
+            <g transform="translate(130, 300)">
+                <use href="#icon-pc"/> 
+                <text x="22" y="50" class="txt-title" font-size="11">Soporte</text>
+                <text x="22" y="62" class="txt-ip" font-size="10">10.50.0.11</text>
+            </g>
+            <g transform="translate(130, 400)">
+                <use href="#icon-pc"/> 
+                <text x="22" y="50" class="txt-title" font-size="11">Ventas</text>
+                <text x="22" y="62" class="txt-ip" font-size="10">10.50.0.12</text>
+            </g>
+        </g>
+
+        <!-- VÍCTIMA (POSICIÓN FIJA) -->
+        <g id="victim-1" transform="translate(230, 530)">
+            <circle cx="25" cy="20" r="50" fill="url(#attack-glow)" opacity="0" id="attack-glow-circle"/>
+            <use href="#icon-pc"/>
+            <rect id="screen-v1" x="3" y="3" width="39" height="29" fill="#0a0a1e" />
+            <use href="#icon-wazuh-agent" x="40" y="-10" transform="scale(1.8)" />
+            <text x="58" y="-2" fill="#00d2ff" font-size="10" font-weight="bold">HIDS</text>
+            
+            <text x="22" y="55" class="txt-title" font-size="12">Servidor HTTP</text>
+            <text x="22" y="68" class="txt-ip">172.60.0.101</text>
+        </g>
+        
+        <!-- Otros clientes -->
+        <g transform="translate(360, 530)"> 
+            <use href="#icon-pc" opacity="0.5"/> 
+            <text x="22" y="50" class="txt-ip" font-size="9" opacity="0.5">172.60.0.102</text>
+        </g>
+        <g transform="translate(490, 530)"> 
+            <use href="#icon-pc" opacity="0.5"/> 
+            <text x="22" y="50" class="txt-ip" font-size="9" opacity="0.5">172.60.0.103</text>
+        </g>
+
+        <!-- SURICATA (NIDS) -->
+        <g transform="translate(875, 100)">
+            <circle cx="25" cy="35" r="60" fill="#e67e22" opacity="0.1"/>
+            <use href="#icon-server" transform="scale(1.6)"/>
+            <text x="25" y="100" class="txt-title" fill="#e67e22" font-size="16">SURICATA</text>
+            <text x="25" y="116" class="txt-title" fill="#e67e22" font-size="12">(NIDS)</text>
+            <text x="25" y="132" class="txt-ip">192.168.56.150</text>
+            <circle cx="25" cy="40" r="6" fill="#e67e22"/>
+            <circle id="alert-led" cx="50" cy="15" r="8" fill="#333" stroke="#e67e22" stroke-width="2"/>
+        </g>
+
+        <!-- WAZUH (SIEM) -->
+        <g transform="translate(875, 530)">
+            <circle cx="25" cy="35" r="60" fill="#3498db" opacity="0.1"/>
+            <use href="#icon-server" transform="scale(1.6)"/>
+            <text x="25" y="100" class="txt-title" fill="#3498db" font-size="16">WAZUH</text>
+            <text x="25" y="116" class="txt-title" fill="#3498db" font-size="12">(SIEM)</text>
+            <text x="25" y="132" class="txt-ip">172.60.0.100</text>
+            <path d="M15,30 L35,30 L35,50 Q25,60 15,50 Z" fill="#3498db" opacity="0.6"/>
+        </g>
+
+        <!-- DASHBOARD ANALISTA -->
+        <g transform="translate(1060, 460)">
+            <rect x="0" y="0" width="90" height="60" fill="#2a2a3e" stroke="#00d2ff" stroke-width="2" rx="5"/>
+            <rect id="dash-screen" x="3" y="3" width="84" height="54" fill="#fff" rx="3"/>
+            <text x="45" y="78" class="txt-title">Analista SOC</text>
+            <circle cx="45" cy="95" r="12" fill="#3498db"/>
+            <text x="45" y="99" font-size="12" fill="#fff" text-anchor="middle">👤</text>
+        </g>
+
+        <g id="traffic-layer"></g>
+
+    </svg>
+
+    <div class="controls">
+        <div class="step-count" id="step-display">PASO 0/11</div>
+        <div class="desc" id="step-desc">Inicializando...</div>
+        <div>
+            <button onclick="prevStep()" id="btn-prev">⬅ Anterior</button>
+            <button onclick="nextStep()" id="btn-next">Siguiente ➡</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const trafficLayer = document.getElementById('traffic-layer');
+    const elTerm = document.getElementById('kali-terminal');
+    const elTermText = document.getElementById('term-line2');
+    const elVictim = document.getElementById('victim-1');
+    const elScreenV1 = document.getElementById('screen-v1');
+    const elAlertLed = document.getElementById('alert-led');
+    const elDashScreen = document.getElementById('dash-screen');
+    const elAttackGlow = document.getElementById('attack-glow-circle');
+
+    let currentStep = 0;
+    let attackInterval = null;
+    let normalTrafficInterval = null;
+    let hidsInterval = null;
+    let isAttackActive = false;
+
+    function createPacket(color, size) {
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("r", size);
+        c.setAttribute("fill", color);
+        c.style.filter = `drop-shadow(0 0 5px ${color})`;
+        return c;
+    }
+
+    function showMessage(x, y, text, type) {
+        const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        txt.textContent = text;
+        txt.setAttribute("x", x);
+        txt.setAttribute("y", y);
+        txt.classList.add("msg-label");
+        txt.classList.add(type === 'error' ? 'msg-timeout' : 'msg-hids');
+        trafficLayer.appendChild(txt);
+        setTimeout(() => { if(trafficLayer.contains(txt)) trafficLayer.removeChild(txt); }, 1800);
+    }
+
+    function animatePacketOnPath(pathId, color, speed, size=3, callback) {
+        const path = document.getElementById(pathId);
+        if(!path) return;
+        
+        const packet = createPacket(color, size);
+        trafficLayer.appendChild(packet);
+        const length = path.getTotalLength();
+        let progress = 0;
+
+        function step() {
+            if(!trafficLayer.contains(packet)) return;
+            progress += speed;
+
+            if (isAttackActive && color === '#00d2ff' && pathId === "path-vic1" && progress > length * 0.85) {
+                const pt = path.getPointAtLength(progress);
+                packet.remove();
+                showMessage(pt.x - 50, pt.y - 20, "⛔ TIMEOUT", "error");
+                return;
+            }
+
+            if (progress > length) {
+                packet.remove();
+                if (callback) callback();
+                return;
+            }
+
+            const pt = path.getPointAtLength(progress);
+            packet.setAttribute("cx", pt.x);
+            packet.setAttribute("cy", pt.y);
+            requestAnimationFrame(step);
+        }
+        step();
+    }
+
+    function startNormalTraffic() {
+        if (normalTrafficInterval) clearInterval(normalTrafficInterval);
+        normalTrafficInterval = setInterval(() => {
+            const userId = Math.floor(Math.random() * 3) + 1;
+            animatePacketOnPath(`path-user${userId}`, '#00d2ff', 3, 3, () => {
+                animatePacketOnPath('path-vic1', '#00d2ff', 3, 3);
+            });
+        }, 1000);
+    }
+
+    function startHidsReporting() {
+        if (hidsInterval) clearInterval(hidsInterval);
+        hidsInterval = setInterval(() => {
+            if(isAttackActive) {
+                showMessage(280, 510, "🛡️ HIDS ALERT", "hids");
+                animatePacketOnPath('path-hids-log', '#00ffff', 5, 5);
+            }
+        }, 1500);
+    }
+
+    function startAttackVisuals() {
+        isAttackActive = true;
+        elVictim.classList.add('stress-shake');
+        elScreenV1.setAttribute("fill", "#500");
+        elAttackGlow.setAttribute("opacity", "0.8");
+
+        startHidsReporting();
+
+        if (attackInterval) clearInterval(attackInterval);
+        attackInterval = setInterval(() => {
+            animatePacketOnPath('path-kali', '#ff0000', 10, 5, () => {
+                animatePacketOnPath('path-vic1', '#ff0000', 10, 5);
+                animatePacketOnPath('path-suricata', '#e67e22', 10, 4);
+            });
+        }, 180);
+    }
+
+    function stopAttackVisuals() {
+        isAttackActive = false;
+        elVictim.classList.remove('stress-shake');
+        elScreenV1.setAttribute("fill", "#0a0a1e");
+        elAttackGlow.setAttribute("opacity", "0");
+        if (attackInterval) clearInterval(attackInterval);
+        if (hidsInterval) clearInterval(hidsInterval);
+    }
+
+    function typeCommand(text) {
+        elTerm.style.opacity = 1;
+        elTermText.textContent = "";
+        let i = 0;
+        const interval = setInterval(() => {
+            elTermText.textContent += text.charAt(i);
+            i++;
+            if(i >= text.length) clearInterval(interval);
+        }, 50);
+    }
+
+    const steps = [
+        {
+            txt: "🟢 Estado Normal: Los usuarios trabajan normalmente. El Agente HIDS (escudo azul) en la víctima monitorea el sistema.",
+            act: () => { resetAll(); startNormalTraffic(); }
+        },
+        {
+            txt: "💻 Kali Linux: El atacante prepara su terminal para el ataque DDoS.",
+            act: () => { 
+                elTerm.style.opacity = 1; 
+                elTermText.textContent = "_"; 
+            }
+        },
+        {
+            txt: "⚡ Comando Ejecutado: 'hping3 --flood -S -p 80' para saturar el servidor HTTP.",
+            act: () => { typeCommand("sudo hping3 --flood -S -p 80 172.60.0.101"); }
+        },
+        {
+            txt: "🔴 ¡ATAQUE INICIADO! Tráfico malicioso (rojo) inunda la red. El servidor víctima entra en estrés por alta carga de CPU.",
+            act: () => { startAttackVisuals(); }
+        },
+        {
+            txt: "❌ Denegación de Servicio: Los usuarios legítimos reciben TIMEOUT. El servidor HTTP no puede responder.",
+            act: () => {}
+        },
+        {
+            txt: "🛡️ HIDS Detecta Anomalía: El Agente Wazuh en la víctima detecta el comportamiento anómalo y envía alertas (cyan) al Manager.",
+            act: () => {}
+        },
+        {
+            txt: "🔍 NIDS en Acción: Suricata detecta el patrón de ataque DDoS en el tráfico de red.",
+            act: () => { 
+                elAlertLed.setAttribute("fill", "red"); 
+                elAlertLed.classList.add("blink"); 
+            }
+        },
+        {
+            txt: "📡 Correlación de Datos: Suricata envía alerta de red (amarillo) y el HIDS envía alerta de host (cyan) a Wazuh.",
+            act: () => { 
+                animatePacketOnPath('path-alert', '#ffff00', 5, 7); 
+            }
+        },
+        {
+            txt: "🧠 Análisis del SIEM: Wazuh correlaciona los datos de RED (Suricata) y HOST (Agente) para confirmar el ataque.",
+            act: () => {}
+        },
+        {
+            txt: "⚠️ Alerta Confirmada: Wazuh genera una alerta de alta prioridad con evidencia de múltiples fuentes.",
+            act: () => {}
+        },
+        {
+            txt: "📊 Dashboard SOC: El analista visualiza la alerta con logs completos de red y sistema para tomar acción inmediata.",
+            act: () => { 
+                animatePacketOnPath('path-wazuh', '#ffff00', 6, 6, () => { 
+                    elDashScreen.setAttribute("fill", "#ff3333"); 
+                });
+            }
+        }
+    ];
+
+    function resetAll() {
+        stopAttackVisuals();
+        while (trafficLayer.firstChild) trafficLayer.removeChild(trafficLayer.firstChild);
+        elTerm.style.opacity = 0;
+        elAlertLed.setAttribute("fill", "#333");
+        elAlertLed.classList.remove("blink");
+        elDashScreen.setAttribute("fill", "#fff");
+    }
+
+    function update() {
+        document.getElementById('step-display').innerText = `PASO ${currentStep}/${steps.length-1}`;
+        document.getElementById('step-desc').innerText = steps[currentStep].txt;
+        steps[currentStep].act();
+        document.getElementById('btn-prev').disabled = currentStep === 0;
+        document.getElementById('btn-next').disabled = currentStep === steps.length - 1;
+    }
+
+    function nextStep() { 
+        if(currentStep < steps.length - 1) { 
+            currentStep++; 
+            update(); 
+        } 
+    }
+    
+    function prevStep() { 
+        if(currentStep > 0) { 
+            currentStep--; 
+            update(); 
+        } 
+    }
+
+    startNormalTraffic();
+    update();
+
+</script>
+
 </body>
 </html>
